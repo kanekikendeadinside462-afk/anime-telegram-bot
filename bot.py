@@ -1,273 +1,208 @@
+import os
 import logging
-import asyncio
+import random
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
-from config import BOT_TOKEN
-from anime_recommender import AnimeRecommender
-from neural_network import NeuralNetworkHelper
-from database import Database
 
 # Настройка логирования
-logging.basicConfig(
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    level=logging.INFO
-)
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-class AnimeBot:
-    def __init__(self):
-        self.recommender = AnimeRecommender()
-        self.neural = NeuralNetworkHelper()
-        self.db = Database()
-    
-    async def start(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Обработчик команды /start"""
-        user = update.effective_user
-        self.db.add_user(user.id, user.username)
-        
-        welcome_text = f"""
-🌟 Привет, {user.first_name}! Я аниме-бот с нейросетью!
+# Токен из переменной
+TOKEN = os.environ.get("BOT_TOKEN", "")
 
-Я помогу тебе выбрать аниме для просмотра:
+# Данные аниме для демонстрации (временно, пока не подключим AniList)
+POPULAR_ANIME = [
+    {"title": "Атака Титанов", "rating": "9.0", "genres": ["Экшен", "Драма"], "year": 2013},
+    {"title": "Врата Штейна", "rating": "9.1", "genres": ["Sci-Fi", "Триллер"], "year": 2011},
+    {"title": "Магическая битва", "rating": "8.8", "genres": ["Экшен", "Фэнтези"], "year": 2020},
+    {"title": "Клинок, рассекающий демонов", "rating": "8.9", "genres": ["Экшен", "Фэнтези"], "year": 2019},
+    {"title": "Ванпанчмен", "rating": "8.7", "genres": ["Экшен", "Комедия"], "year": 2015},
+]
 
-🎲 /random - случайное аниме
-🎭 /genre - выбрать по жанру
-🤖 /recommend - рекомендация от нейросети
-🔥 /popular - популярные аниме
-⭐ /rated - топ по рейтингу
-🔍 /search [название] - поиск аниме
-❓ /help - помощь
+RATED_ANIME = [
+    {"title": "Fullmetal Alchemist: Brotherhood", "rating": "9.2", "genres": ["Экшен", "Приключения"], "year": 2009},
+    {"title": "Тетрадь смерти", "rating": "9.0", "genres": ["Триллер", "Детектив"], "year": 2006},
+    {"title": "Код Гиас", "rating": "8.9", "genres": ["Экшен", "Драма"], "year": 2006},
+]
 
-Просто напиши, что хочешь посмотреть!
-        """
-        
-        await update.message.reply_text(welcome_text)
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    keyboard = [
+        [InlineKeyboardButton("🎲 Случайное аниме", callback_data="random")],
+        [InlineKeyboardButton("🎭 По жанру", callback_data="genre")],
+        [InlineKeyboardButton("🤖 Рекомендация", callback_data="recommend")],
+        [InlineKeyboardButton("🔥 Популярные", callback_data="popular")],
+        [InlineKeyboardButton("⭐ Топ по рейтингу", callback_data="rated")],
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
     
-    async def help_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Команда /help"""
-        help_text = """
-📚 *Команды:*
+    await update.message.reply_text(
+        "🌟 Привет! Я аниме-бот!\n\nВыбери действие:",
+        reply_markup=reply_markup
+    )
 
-/start - начать работу
-/random - случайное аниме
-/genre - выбрать по жанру
-/recommend - рекомендация от нейросети
-/popular - топ популярных аниме
-/rated - топ рейтинговых аниме
-/search [название] - поиск аниме
-/help - помощь
+async def random_anime(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    anime = random.choice(POPULAR_ANIME)
+    text = f"🎲 *Случайное аниме:*\n\n"
+    text += f"*{anime['title']}*\n"
+    text += f"⭐ Рейтинг: {anime['rating']}\n"
+    text += f"🎭 Жанры: {', '.join(anime['genres'])}\n"
+    text += f"📅 Год: {anime['year']}"
+    
+    keyboard = [[InlineKeyboardButton("🎲 Еще", callback_data="random")]]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    await update.message.reply_text(text, parse_mode='Markdown', reply_markup=reply_markup)
 
-💡 *Примеры запросов:*
-- "Посоветуй аниме про приключения"
-- "Какое аниме похоже на Наруто?"
-        """
-        await update.message.reply_text(help_text, parse_mode='Markdown')
+async def popular_anime(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text = "🔥 *Популярные аниме:*\n\n"
+    for i, anime in enumerate(POPULAR_ANIME[:3], 1):
+        text += f"{i}. *{anime['title']}* - ⭐ {anime['rating']}\n"
     
-    async def random_anime(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Случайное аниме"""
-        await update.message.reply_text("🔍 Ищу случайное аниме...")
-        anime = self.recommender.get_random_anime()
-        if anime:
-            await self.send_anime_info(update, anime)
-        else:
-            await update.message.reply_text("😔 Не удалось получить аниме. Попробуй позже!")
+    keyboard = [[InlineKeyboardButton("🎲 Другое", callback_data="random")]]
+    reply_markup = InlineKeyboardMarkup(keyboard)
     
-    async def genre_selection(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Выбор жанра"""
-        genres = ["Экшен", "Приключения", "Комедия", "Драма", "Фэнтези", "Романтика", "Научная фантастика", "Ужасы", "Триллер"]
-        
-        keyboard = []
-        for genre in genres:
-            keyboard.append([InlineKeyboardButton(genre, callback_data=f"genre_{genre}")])
-        
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        await update.message.reply_text("🎭 Выбери жанр:", reply_markup=reply_markup)
-    
-    async def popular_anime(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Популярные аниме"""
-        await update.message.reply_text("🔥 Загружаю популярные аниме...")
-        animes = self.recommender.get_popular_anime()
-        for anime in animes[:3]:
-            await self.send_anime_info(update, anime)
-    
-    async def rated_anime(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Топ по рейтингу"""
-        await update.message.reply_text("⭐ Загружаю топ по рейтингу...")
-        animes = self.recommender.get_top_rated_anime()
-        for anime in animes[:3]:
-            await self.send_anime_info(update, anime)
-    
-    async def search_anime(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Поиск аниме"""
-        if not context.args:
-            await update.message.reply_text("🔍 Напиши название после команды, например:\n/search Наруто")
-            return
-        
-        query = " ".join(context.args)
-        await update.message.reply_text(f"🔍 Ищу: {query}...")
-        
-        results = self.recommender.search_anime(query)
-        if results:
-            for anime in results[:3]:
-                await self.send_anime_info(update, anime)
-        else:
-            await update.message.reply_text("😔 Ничего не найдено. Попробуй другое название!")
-    
-    async def neural_recommendation_start(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Запуск нейросетевой рекомендации"""
-        await update.message.reply_text(
-            "🤖 *Напиши, что ты хочешь посмотреть!*\n\n"
-            "Например: 'Посоветуй аниме про самураев с глубоким сюжетом'",
-            parse_mode='Markdown'
-        )
-        context.user_data['waiting_for_neural'] = True
-    
-    async def handle_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Обработка текстовых сообщений"""
-        text = update.message.text
-        
-        # Проверяем, ждет ли пользователь рекомендацию от нейросети
-        if context.user_data.get('waiting_for_neural'):
-            await update.message.reply_text("🔮 Нейросеть анализирует твой запрос... Подожди немного!")
-            
-            recommendations = await self.neural.get_anime_recommendations(text)
-            
-            if recommendations:
-                response = "🎯 *Нейросеть рекомендует:*\n\n"
-                for i, rec in enumerate(recommendations[:3], 1):
-                    response += f"{i}. *{rec.get('title', 'Неизвестно')}*\n"
-                    response += f"   📝 {rec.get('description', 'Описание отсутствует')}\n"
-                    if rec.get('rating'):
-                        response += f"   ⭐ Рейтинг: {rec.get('rating')}\n"
-                    if rec.get('reason'):
-                        response += f"   💡 *Почему:* {rec.get('reason')}\n"
-                    response += "\n"
-                
-                await update.message.reply_text(response, parse_mode='Markdown')
-            else:
-                await update.message.reply_text(
-                    "😔 Извини, не удалось получить рекомендации. "
-                    "Попробуй переформулировать запрос или используй команды /random, /genre!"
-                )
-            
-            context.user_data['waiting_for_neural'] = False
-        else:
-            # Обычный запрос к нейросети
-            await update.message.reply_text("🔍 Обрабатываю запрос...")
-            response = await self.neural.analyze_request(text)
-            await update.message.reply_text(response, parse_mode='Markdown')
-    
-    async def send_anime_info(self, update: Update, anime: dict):
-        """Отправка информации об аниме"""
-        genres_text = ', '.join(anime.get('genres', ['Не указаны'])) if anime.get('genres') else 'Не указаны'
-        
-        text = f"""
-🎬 *{anime.get('title', 'Название неизвестно')}*
+    await update.message.reply_text(text, parse_mode='Markdown', reply_markup=reply_markup)
 
-📝 *Описание:*
-{anime.get('description', 'Описание отсутствует')}
+async def rated_anime(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text = "⭐ *Топ по рейтингу:*\n\n"
+    for i, anime in enumerate(RATED_ANIME, 1):
+        text += f"{i}. *{anime['title']}* - ⭐ {anime['rating']}\n"
+        text += f"   🎭 {', '.join(anime['genres'])} | 📅 {anime['year']}\n\n"
+    
+    await update.message.reply_text(text, parse_mode='Markdown')
 
-⭐ *Рейтинг:* {anime.get('rating', 'Н/Д')}/10
-🎭 *Жанры:* {genres_text}
-📅 *Год:* {anime.get('year', 'Н/Д')}
-🎥 *Эпизоды:* {anime.get('episodes', 'Н/Д')}
-        """
+async def genre_selection(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    genres = [
+        "Экшен", "Приключения", "Комедия", "Драма", 
+        "Фэнтези", "Романтика", "Научная фантастика", "Ужасы"
+    ]
+    
+    keyboard = []
+    for genre in genres:
+        keyboard.append([InlineKeyboardButton(genre, callback_data=f"genre_{genre}")])
+    
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await update.message.reply_text("🎭 Выбери жанр:", reply_markup=reply_markup)
+
+async def genre_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    
+    genre = query.data.replace("genre_", "")
+    
+    # Поиск аниме по жанру (временная заглушка)
+    anime_list = {
+        "Экшен": ["Атака Титанов", "Магическая битва", "Ванпанчмен"],
+        "Комедия": ["Ванпанчмен", "Gintama", "Ковбой Бибоп"],
+        "Драма": ["Врата Штейна", "Твоё имя", "Тихий голос"],
+        "Романтика": ["Твоё имя", "Торадора", "Сакурасо"],
+        "Фэнтези": ["Атака Титанов", "Магическая битва", "Врата Штейна"],
+        "Научная фантастика": ["Врата Штейна", "Код Гиас", "Евангелион"],
+        "Приключения": ["One Piece", "Hunter x Hunter", "Fullmetal Alchemist"],
+        "Ужасы": ["Another", "Paranoia Agent", "Тетрадь смерти"]
+    }
+    
+    animes = anime_list.get(genre, ["Нет рекомендаций"])
+    anime = random.choice(animes)
+    
+    text = f"🎭 *Жанр: {genre}*\n\n✨ Рекомендую: *{anime}*"
+    
+    keyboard = [[InlineKeyboardButton("🎭 Другой жанр", callback_data="genre")]]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    await query.edit_message_text(text, parse_mode='Markdown', reply_markup=reply_markup)
+
+async def recommend_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(
+        "🤖 *Нейросеть поможет выбрать аниме!*\n\n"
+        "Напиши, что ты хочешь посмотреть, например:\n"
+        "- Посоветуй аниме про приключения\n"
+        "- Что-то похожее на Наруто\n"
+        "- Аниме с глубоким сюжетом"
+    )
+    context.user_data['waiting_for_recommend'] = True
+
+async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text = update.message.text
+    
+    if context.user_data.get('waiting_for_recommend'):
+        await update.message.reply_text("🔮 Обрабатываю запрос...")
         
-        keyboard = [
-            [InlineKeyboardButton("👍 Понравилось", callback_data=f"like_{anime.get('id')}"),
-             InlineKeyboardButton("🎲 Другое", callback_data="random")],
-            [InlineKeyboardButton("🤖 Еще рекомендации", callback_data="neural_recommend")]
+        # Временная заглушка для рекомендаций
+        recommendations = [
+            "🎯 *Атака Титанов* - эпичное фэнтези о борьбе с гигантами",
+            "🎯 *Врата Штейна* - научная фантастика о путешествиях во времени",
+            "🎯 *Магическая битва* - динамичный экшен про магию и проклятия"
         ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
         
-        # Если есть картинка, отправляем с фото
-        if anime.get('image_url'):
-            try:
-                await update.message.reply_photo(
-                    photo=anime['image_url'],
-                    caption=text,
-                    parse_mode='Markdown',
-                    reply_markup=reply_markup
-                )
-            except Exception as e:
-                print(f"Ошибка отправки фото: {e}")
-                await update.message.reply_text(text, parse_mode='Markdown', reply_markup=reply_markup)
-        else:
-            await update.message.reply_text(text, parse_mode='Markdown', reply_markup=reply_markup)
+        response = "🎯 *Рекомендации:*\n\n" + "\n\n".join(recommendations)
+        await update.message.reply_text(response, parse_mode='Markdown')
+        context.user_data['waiting_for_recommend'] = False
+    else:
+        await update.message.reply_text(
+            "Используй кнопки или команды:\n"
+            "/start - главное меню\n"
+            "/random - случайное аниме\n"
+            "/popular - популярные\n"
+            "/genre - по жанру\n"
+            "/recommend - рекомендация нейросети\n"
+            "/rated - топ по рейтингу"
+        )
+
+async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
     
-    async def button_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Обработка нажатий на кнопки"""
-        query = update.callback_query
-        await query.answer()
-        
-        data = query.data
-        
-        if data == "random":
-            await self.random_anime(update, context)
-        elif data == "genre":
-            await self.genre_selection(update, context)
-        elif data == "neural_recommend":
-            await self.neural_recommendation_start(update, context)
-        elif data == "popular":
-            await self.popular_anime(update, context)
-        elif data == "rated":
-            await self.rated_anime(update, context)
-        elif data.startswith("genre_"):
-            genre = data.replace("genre_", "")
-            await update.message.reply_text(f"🔍 Ищу аниме в жанре {genre}...")
-            anime = self.recommender.get_anime_by_genre(genre)
-            if anime:
-                await self.send_anime_info(update, anime)
-            else:
-                await update.message.reply_text(f"😔 Не нашел аниме в жанре {genre}. Попробуй другой жанр!")
-        elif data.startswith("like_"):
-            anime_id = data.replace("like_", "")
-            self.db.add_like(update.effective_user.id, anime_id)
-            await query.edit_message_text("❤️ Спасибо! Учту твой вкус для следующих рекомендаций!")
+    data = query.data
     
-    async def run(self):
-        """Запуск бота"""
-        self.application = Application.builder().token(BOT_TOKEN).build()
-        
-        # Регистрация обработчиков
-        self.application.add_handler(CommandHandler("start", self.start))
-        self.application.add_handler(CommandHandler("help", self.help_command))
-        self.application.add_handler(CommandHandler("random", self.random_anime))
-        self.application.add_handler(CommandHandler("genre", self.genre_selection))
-        self.application.add_handler(CommandHandler("recommend", self.neural_recommendation_start))
-        self.application.add_handler(CommandHandler("popular", self.popular_anime))
-        self.application.add_handler(CommandHandler("rated", self.rated_anime))
-        self.application.add_handler(CommandHandler("search", self.search_anime))
-        
-        self.application.add_handler(CallbackQueryHandler(self.button_callback))
-        self.application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_message))
-        
-        logger.info("🚀 Бот запущен!")
-        
-        # Запускаем бота
-        await self.application.initialize()
-        await self.application.start()
-        await self.application.updater.start_polling()
-        
-        # Держим бота запущенным
-        try:
-            await asyncio.Event().wait()
-        except KeyboardInterrupt:
-            pass
-        finally:
-            await self.application.stop()
+    if data == "random":
+        anime = random.choice(POPULAR_ANIME)
+        text = f"🎲 *Случайное аниме:*\n\n*{anime['title']}*\n⭐ {anime['rating']}\n🎭 {', '.join(anime['genres'])}"
+        await query.edit_message_text(text, parse_mode='Markdown')
+    
+    elif data == "popular":
+        text = "🔥 *Популярные аниме:*\n\n"
+        for i, anime in enumerate(POPULAR_ANIME[:3], 1):
+            text += f"{i}. *{anime['title']}* - ⭐ {anime['rating']}\n"
+        await query.edit_message_text(text, parse_mode='Markdown')
+    
+    elif data == "rated":
+        text = "⭐ *Топ по рейтингу:*\n\n"
+        for i, anime in enumerate(RATED_ANIME, 1):
+            text += f"{i}. *{anime['title']}* - ⭐ {anime['rating']}\n"
+        await query.edit_message_text(text, parse_mode='Markdown')
+    
+    elif data == "genre":
+        await genre_selection(update, context)
+    
+    elif data == "recommend":
+        await recommend_start(update, context)
+    
+    elif data.startswith("genre_"):
+        await genre_callback(update, context)
+
+def main():
+    if not TOKEN:
+        logger.error("BOT_TOKEN not found!")
+        return
+    
+    app = Application.builder().token(TOKEN).build()
+    
+    # Команды
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("random", random_anime))
+    app.add_handler(CommandHandler("popular", popular_anime))
+    app.add_handler(CommandHandler("rated", rated_anime))
+    app.add_handler(CommandHandler("genre", genre_selection))
+    app.add_handler(CommandHandler("recommend", recommend_start))
+    
+    # Обработчики кнопок
+    app.add_handler(CallbackQueryHandler(button_callback))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    
+    logger.info("🚀 Бот запущен!")
+    app.run_polling()
 
 if __name__ == "__main__":
-    import asyncio
-    bot = AnimeBot()
-    
-    # Создаем новый event loop для Railway
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    
-    try:
-        loop.run_until_complete(bot.run())
-    except KeyboardInterrupt:
-        pass
-    finally:
-        loop.close()
+    main()
