@@ -1,133 +1,117 @@
 import aiohttp
 import json
 import re
+import random
+import logging
 from config import YANDEX_API_KEY, YANDEX_FOLDER_ID, NEURAL_NETWORK_TYPE
+from anime_recommender import AnimeRecommender
+
+logger = logging.getLogger(__name__)
 
 class NeuralNetworkHelper:
     def __init__(self):
         self.type = NEURAL_NETWORK_TYPE
+        self.recommender = AnimeRecommender()
+        logger.info("NeuralNetworkHelper инициализирован")
     
     async def get_anime_recommendations(self, user_query: str):
-        """Получение рекомендаций от нейросети"""
-        if self.type != "yandex":
-            return None
+        """Получение рекомендаций аниме"""
+        logger.info(f"Получен запрос на рекомендацию: {user_query}")
         
-        prompt = f"""
-Ты - эксперт по аниме. Пользователь хочет получить рекомендации аниме.
-Запрос пользователя: {user_query}
-
-Дай 3 рекомендации аниме в формате JSON. Отвечай только JSON, без лишнего текста.
-Формат:
-[
-    {{
-        "title": "Название аниме",
-        "description": "Краткое описание (1-2 предложения)",
-        "rating": "Рейтинг от 1 до 10 (если знаешь)",
-        "reason": "Почему это аниме подходит под запрос"
-    }}
-]
-"""
+        # Анализируем запрос, чтобы понять жанр
+        genres = {
+            "приключени": "Приключения",
+            "экшен": "Экшен",
+            "боевик": "Экшен",
+            "романтик": "Романтика",
+            "любов": "Романтика",
+            "комеди": "Комедия",
+            "смешн": "Комедия",
+            "драма": "Драма",
+            "грустн": "Драма",
+            "фэнтези": "Фэнтези",
+            "маги": "Фэнтези",
+            "ужас": "Ужасы",
+            "страшн": "Ужасы",
+            "научн": "Научная фантастика",
+            "фантастик": "Научная фантастика",
+            "триллер": "Триллер",
+            "спорт": "Спорт",
+            "повседневн": "Повседневность"
+        }
         
-        return await self._get_yandex_recommendations(prompt)
-    
-    async def _get_yandex_recommendations(self, prompt: str):
-        """Использование YandexGPT"""
-        try:
-            url = "https://llm.api.cloud.yandex.net/foundationModels/v1/completion"
-            headers = {
-                "Authorization": f"Api-Key {YANDEX_API_KEY}",
-                "Content-Type": "application/json"
-            }
-            
-            data = {
-                "modelUri": f"gpt://{YANDEX_FOLDER_ID}/yandexgpt-lite",
-                "completionOptions": {
-                    "stream": False,
-                    "temperature": 0.6,
-                    "maxTokens": 800
-                },
-                "messages": [
-                    {"role": "system", "text": "Ты - эксперт по аниме. Отвечай только в формате JSON, без пояснений."},
-                    {"role": "user", "text": prompt}
-                ]
-            }
-            
-            async with aiohttp.ClientSession() as session:
-                async with session.post(url, headers=headers, json=data) as response:
-                    result = await response.json()
-                    
-                    if 'result' in result:
-                        content = result['result']['alternatives'][0]['message']['text']
-                        # Извлекаем JSON из ответа
-                        json_match = re.search(r'\[.*\]', content, re.DOTALL)
-                        if json_match:
-                            return json.loads(json_match.group())
-        except Exception as e:
-            print(f"YandexGPT error: {e}")
+        # Определяем жанр из запроса
+        detected_genre = None
+        query_lower = user_query.lower()
         
+        for keyword, genre in genres.items():
+            if keyword in query_lower:
+                detected_genre = genre
+                logger.info(f"Определён жанр: {genre} по ключевому слову: {keyword}")
+                break
+        
+        # Получаем аниме по жанру
+        if detected_genre:
+            anime = self.recommender.get_anime_by_genre(detected_genre)
+            if anime:
+                logger.info(f"Найдено аниме: {anime.get('title')}")
+                return [self._format_recommendation(anime, detected_genre)]
+        
+        # Если не нашли по жанру, пробуем популярные
+        logger.info("Пробуем получить популярные аниме")
+        popular = self.recommender.get_popular_anime()
+        if popular:
+            logger.info(f"Получено {len(popular)} популярных аниме")
+            recommendations = []
+            for anime in popular[:3]:
+                recommendations.append(self._format_recommendation(anime, "популярное"))
+            return recommendations
+        
+        # Если совсем ничего не нашли
+        logger.warning("Не удалось найти аниме для рекомендации")
         return None
+    
+    def _format_recommendation(self, anime: dict, reason: str):
+        """Форматирование рекомендации"""
+        title = anime.get('title', 'Неизвестно')
+        description = anime.get('description', 'Описание отсутствует')[:200]
+        rating = anime.get('rating', 'Н/Д')
+        
+        return {
+            "title": title,
+            "description": description,
+            "rating": rating,
+            "reason": f"По твоему запросу подходит это {reason} аниме"
+        }
     
     async def analyze_request(self, text: str):
         """Анализ запроса пользователя"""
-        if self.type != "yandex":
-            return "🔮 Нейросеть временно недоступна. Используй команды /random или /genre для подбора аниме!"
+        logger.info(f"Анализ запроса: {text}")
+        query_lower = text.lower()
         
-        prompt = f"""
-Проанализируй запрос пользователя об аниме: "{text}"
-
-Если пользователь просит рекомендацию - дай советы и предложи конкретные аниме.
-Если спрашивает о конкретном аниме - расскажи о нем.
-Если просто общается - поддержи диалог.
-
-Ответь дружелюбно, информативно, используй эмодзи.
-"""
+        # Приветствие
+        if "привет" in query_lower:
+            return "🦇 *Приветствую, искатель!* Готов погрузиться во тьму аниме?"
         
-        try:
-            url = "https://llm.api.cloud.yandex.net/foundationModels/v1/completion"
-            headers = {
-                "Authorization": f"Api-Key {YANDEX_API_KEY}",
-                "Content-Type": "application/json"
-            }
-            
-            data = {
-                "modelUri": f"gpt://{YANDEX_FOLDER_ID}/yandexgpt-lite",
-                "completionOptions": {
-                    "stream": False,
-                    "temperature": 0.7,
-                    "maxTokens": 500
-                },
-                "messages": [
-                    {"role": "system", "text": "Ты - дружелюбный помощник по аниме."},
-                    {"role": "user", "text": prompt}
-                ]
-            }
-            
-            async with aiohttp.ClientSession() as session:
-                async with session.post(url, headers=headers, json=data) as response:
-                    result = await response.json()
-                    if 'result' in result:
-                        return result['result']['alternatives'][0]['message']['text']
-        except Exception as e:
-            print(f"YandexGPT analyze error: {e}")
+        # Помощь
+        if "помощ" in query_lower or "help" in query_lower:
+            return "🦇 *Помощь:*\n/start — главное меню\n/random — случайное аниме\n/genre — по жанру\n/recommend — рекомендации\n/popular — популярные\n/rated — топ рейтинга"
         
-        return "🔮 Нейросеть временно недоступна. Попробуй позже или используй команды /random, /genre!"
+        # Получаем рекомендации
+        recommendations = await self.get_anime_recommendations(text)
+        
+        if recommendations:
+            response = "🔮 *Тьма шепчет...*\n\n"
+            for rec in recommendations:
+                response += f"🎬 *{rec['title']}*\n"
+                response += f"📜 {rec['description']}\n"
+                response += f"⭐ {rec['rating']}/10\n"
+                response += f"💀 *Почему:* {rec['reason']}\n\n"
+            response += "_Да будет так..._"
+            return response
+        
+        return "🌙 *Тьма не может разобрать твой запрос...*\n\nПопробуй один из вариантов:\n• Посоветуй аниме про приключения\n• Что-то романтичное\n• Мрачное аниме\n• Экшен с магией"
     
     async def analyze_quiz_answers(self, answers: list):
         """Анализ ответов квиза"""
-        if self.type != "yandex":
-            return None
-        
-        prompt = f"""
-На основе ответов пользователя в квизе подбери 3 аниме.
-Ответы пользователя: {answers}
-
-Верни JSON с рекомендациями:
-[
-    {{
-        "title": "Название аниме",
-        "description": "Краткое описание"
-    }}
-]
-"""
-        
-        return await self._get_yandex_recommendations(prompt)
+        return await self.get_anime_recommendations(" ".join(answers))
