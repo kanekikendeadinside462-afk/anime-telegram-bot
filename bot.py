@@ -27,7 +27,7 @@ class AnimeBot:
         keyboard = [
             [InlineKeyboardButton("🎲 Случайное аниме", callback_data="random")],
             [InlineKeyboardButton("🎭 По жанру", callback_data="genre")],
-            [InlineKeyboardButton("🤖 Рекомендация от нейросети", callback_data="recommend")],
+            [InlineKeyboardButton("🤖 Рекомендация", callback_data="recommend")],
             [InlineKeyboardButton("🔥 Популярные", callback_data="popular")],
             [InlineKeyboardButton("⭐ Топ по рейтингу", callback_data="rated")],
             [InlineKeyboardButton("🔍 Поиск", callback_data="search")]
@@ -35,8 +35,7 @@ class AnimeBot:
         reply_markup = InlineKeyboardMarkup(keyboard)
         
         await update.message.reply_text(
-            f"🌟 Привет, {user.first_name}! Я аниме-бот с нейросетью YandexGPT!\n\n"
-            "Выбери действие:",
+            f"🌟 Привет, {user.first_name}! Я аниме-бот!\n\nВыбери действие:",
             reply_markup=reply_markup
         )
     
@@ -45,7 +44,7 @@ class AnimeBot:
         await update.message.reply_text("🔍 Ищу случайное аниме...")
         anime = self.recommender.get_random_anime()
         if anime:
-            await self.send_anime_info(update, anime)
+            await self.send_anime_info(update.message, anime)
         else:
             await update.message.reply_text("😔 Не удалось получить аниме. Попробуй позже!")
     
@@ -53,15 +52,21 @@ class AnimeBot:
         """Популярные аниме"""
         await update.message.reply_text("🔥 Загружаю популярные аниме...")
         animes = self.recommender.get_popular_anime()
-        for anime in animes[:3]:
-            await self.send_anime_info(update, anime)
+        if animes:
+            for anime in animes[:3]:
+                await self.send_anime_info(update.message, anime)
+        else:
+            await update.message.reply_text("😔 Не удалось получить популярные аниме!")
     
     async def rated_anime(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Топ по рейтингу"""
         await update.message.reply_text("⭐ Загружаю топ по рейтингу...")
         animes = self.recommender.get_top_rated_anime()
-        for anime in animes[:3]:
-            await self.send_anime_info(update, anime)
+        if animes:
+            for anime in animes[:3]:
+                await self.send_anime_info(update.message, anime)
+        else:
+            await update.message.reply_text("😔 Не удалось получить топ аниме!")
     
     async def genre_selection(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Выбор жанра"""
@@ -81,14 +86,14 @@ class AnimeBot:
         context.user_data['waiting_for_search'] = True
     
     async def recommend_start(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Запрос рекомендации от нейросети"""
+        """Запрос рекомендации"""
         await update.message.reply_text(
-            "🤖 *Нейросеть YandexGPT поможет выбрать аниме!*\n\n"
-            "Напиши, что ты хочешь посмотреть, например:\n"
+            "🤖 *Напиши, что ты хочешь посмотреть!*\n\n"
+            "Например:\n"
             "- Посоветуй аниме про приключения\n"
             "- Что-то похожее на Наруто\n"
-            "- Аниме с глубоким сюжетом\n"
-            "- Романтическое аниме"
+            "- Аниме с глубоким сюжетом",
+            parse_mode='Markdown'
         )
         context.user_data['waiting_for_recommend'] = True
     
@@ -103,7 +108,7 @@ class AnimeBot:
             
             if results:
                 for anime in results[:3]:
-                    await self.send_anime_info(update, anime)
+                    await self.send_anime_info(update.message, anime)
             else:
                 await update.message.reply_text("😔 Ничего не найдено. Попробуй другое название!")
             
@@ -111,7 +116,7 @@ class AnimeBot:
         
         # Рекомендация от нейросети
         elif context.user_data.get('waiting_for_recommend'):
-            await update.message.reply_text("🔮 Нейросеть анализирует запрос... Подожди немного!")
+            await update.message.reply_text("🔮 Нейросеть анализирует запрос...")
             
             recommendations = await self.neural.get_anime_recommendations(text)
             
@@ -130,23 +135,23 @@ class AnimeBot:
             else:
                 await update.message.reply_text(
                     "😔 Не удалось получить рекомендации. "
-                    "Попробуй переформулировать запрос или используй команды /random, /genre!"
+                    "Попробуй команды /random или /genre!"
                 )
             
             context.user_data['waiting_for_recommend'] = False
         
         else:
             await update.message.reply_text(
-                "Используй кнопки или команды:\n"
+                "Используй команды:\n"
                 "/start - главное меню\n"
                 "/random - случайное аниме\n"
                 "/popular - популярные\n"
                 "/genre - по жанру\n"
-                "/recommend - рекомендация нейросети\n"
+                "/recommend - рекомендация\n"
                 "/rated - топ по рейтингу"
             )
     
-    async def send_anime_info(self, update: Update, anime: dict):
+    async def send_anime_info(self, message, anime: dict):
         """Отправка информации об аниме с постером"""
         genres_text = ', '.join(anime.get('genres', ['Не указаны']))
         
@@ -169,10 +174,9 @@ class AnimeBot:
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
         
-        # Отправка с постером
         if anime.get('image_url'):
             try:
-                await update.message.reply_photo(
+                await message.reply_photo(
                     photo=anime['image_url'],
                     caption=text,
                     parse_mode='Markdown',
@@ -180,9 +184,9 @@ class AnimeBot:
                 )
             except Exception as e:
                 logger.error(f"Ошибка отправки фото: {e}")
-                await update.message.reply_text(text, parse_mode='Markdown', reply_markup=reply_markup)
+                await message.reply_text(text, parse_mode='Markdown', reply_markup=reply_markup)
         else:
-            await update.message.reply_text(text, parse_mode='Markdown', reply_markup=reply_markup)
+            await message.reply_text(text, parse_mode='Markdown', reply_markup=reply_markup)
     
     async def button_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Обработка кнопок"""
@@ -202,14 +206,20 @@ class AnimeBot:
         elif data == "popular":
             await query.message.reply_text("🔥 Загружаю популярные аниме...")
             animes = self.recommender.get_popular_anime()
-            for anime in animes[:3]:
-                await self.send_anime_info(query.message, anime)
+            if animes:
+                for anime in animes[:3]:
+                    await self.send_anime_info(query.message, anime)
+            else:
+                await query.message.reply_text("😔 Не удалось получить популярные аниме!")
         
         elif data == "rated":
             await query.message.reply_text("⭐ Загружаю топ по рейтингу...")
             animes = self.recommender.get_top_rated_anime()
-            for anime in animes[:3]:
-                await self.send_anime_info(query.message, anime)
+            if animes:
+                for anime in animes[:3]:
+                    await self.send_anime_info(query.message, anime)
+            else:
+                await query.message.reply_text("😔 Не удалось получить топ аниме!")
         
         elif data == "genre":
             genres = ["Экшен", "Приключения", "Комедия", "Драма", "Фэнтези", "Романтика", "Научная фантастика", "Ужасы"]
@@ -260,8 +270,13 @@ class AnimeBot:
         app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_message))
         
         logger.info("🚀 Бот запущен!")
-        app.run_polling()
+        await app.initialize()
+        await app.start()
+        await app.updater.start_polling()
+        
+        # Держим бота запущенным
+        await asyncio.Event().wait()
 
 if __name__ == "__main__":
     bot = AnimeBot()
-    bot.run()
+    asyncio.run(bot.run())
