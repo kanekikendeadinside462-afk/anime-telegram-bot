@@ -1,4 +1,4 @@
-=import os
+import os
 import logging
 import random
 import asyncio
@@ -50,9 +50,9 @@ class AnimeBot:
         else:
             await update.message.reply_text(text, parse_mode='Markdown', reply_markup=reply_markup)
     
-    async def show_random(self, update: Update, context: ContextTypes.DEFAULT_TYPE, message=None):
+    async def show_random(self, update: Update, context: ContextTypes.DEFAULT_TYPE, query_message=None):
         """Показать случайное аниме"""
-        target = message or update.message
+        target = query_message or update.message
         await target.reply_text("🦇 *Призываю судьбу...*", parse_mode='Markdown')
         anime = self.recommender.get_random_anime()
         if anime:
@@ -60,9 +60,9 @@ class AnimeBot:
         else:
             await target.reply_text("🌙 *Тьма молчит... Попробуй позже*", parse_mode='Markdown')
     
-    async def show_popular(self, update: Update, context: ContextTypes.DEFAULT_TYPE, message=None):
+    async def show_popular(self, update: Update, context: ContextTypes.DEFAULT_TYPE, query_message=None):
         """Показать популярные аниме"""
-        target = message or update.message
+        target = query_message or update.message
         await target.reply_text("🔥 *Пробуждаю популярность...*", parse_mode='Markdown')
         animes = self.recommender.get_popular_anime()
         if animes:
@@ -71,9 +71,9 @@ class AnimeBot:
         else:
             await target.reply_text("🌙 *Ничего не найдено...*", parse_mode='Markdown')
     
-    async def show_rated(self, update: Update, context: ContextTypes.DEFAULT_TYPE, message=None):
+    async def show_rated(self, update: Update, context: ContextTypes.DEFAULT_TYPE, query_message=None):
         """Показать топ по рейтингу"""
-        target = message or update.message
+        target = query_message or update.message
         await target.reply_text("⭐ *Взываю к великим...*", parse_mode='Markdown')
         animes = self.recommender.get_top_rated_anime()
         if animes:
@@ -327,11 +327,6 @@ _Прикоснись к тени..._
         app = Application.builder().token(BOT_TOKEN).build()
         
         app.add_handler(CommandHandler("start", self.start))
-        app.add_handler(CommandHandler("random", self.show_random))
-        app.add_handler(CommandHandler("popular", self.show_popular))
-        app.add_handler(CommandHandler("rated", self.show_rated))
-        app.add_handler(CommandHandler("genre", self.show_genres))
-        app.add_handler(CommandHandler("recommend", self.show_recommend_prompt))
         
         app.add_handler(CallbackQueryHandler(self.button_callback))
         app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_message))
