@@ -18,10 +18,11 @@ class AnimeBot:
         self.neural = NeuralNetworkHelper()
         self.db = Database()
     
-    async def start(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Главное меню"""
+    async def show_main_menu(self, update: Update, context: ContextTypes.DEFAULT_TYPE, message=None):
+        """Показать главное меню"""
         user = update.effective_user
-        self.db.add_user(user.id, user.username)
+        if user:
+            self.db.add_user(user.id, user.username)
         
         keyboard = [
             [InlineKeyboardButton("🦇 Случайное аниме", callback_data="main_random")],
@@ -34,7 +35,7 @@ class AnimeBot:
         reply_markup = InlineKeyboardMarkup(keyboard)
         
         text = (
-            f"🦇 *Добро пожаловать в Тёмную Библиотеку, {user.first_name}...*\n\n"
+            f"🦇 *Добро пожаловать в Тёмную Библиотеку!*\n\n"
             "Я хранитель аниме-знаний. Выбери своё оружие:\n\n"
             "🦇 Случайное аниме — пусть судьба решит\n"
             "🎭 По жанру — найди своё проклятие\n"
@@ -46,41 +47,43 @@ class AnimeBot:
         )
         
         if update.callback_query:
-            await update.callback_query.edit_message_text(text, parse_mode='Markdown', reply_markup=reply_markup)
+            try:
+                await update.callback_query.edit_message_text(text, parse_mode='Markdown', reply_markup=reply_markup)
+            except:
+                await update.callback_query.message.reply_text(text, parse_mode='Markdown', reply_markup=reply_markup)
+        elif message:
+            await message.reply_text(text, parse_mode='Markdown', reply_markup=reply_markup)
         else:
             await update.message.reply_text(text, parse_mode='Markdown', reply_markup=reply_markup)
     
-    async def show_random(self, update: Update, context: ContextTypes.DEFAULT_TYPE, query_message=None):
+    async def show_random(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Показать случайное аниме"""
-        target = query_message or update.message
-        await target.reply_text("🦇 *Призываю судьбу...*", parse_mode='Markdown')
+        await update.callback_query.message.reply_text("🦇 *Призываю судьбу...*", parse_mode='Markdown')
         anime = self.recommender.get_random_anime()
         if anime:
-            await self.send_anime_info(target, anime, show_back=True)
+            await self.send_anime_info(update.callback_query.message, anime, show_back=True)
         else:
-            await target.reply_text("🌙 *Тьма молчит... Попробуй позже*", parse_mode='Markdown')
+            await update.callback_query.message.reply_text("🌙 *Тьма молчит... Попробуй позже*", parse_mode='Markdown')
     
-    async def show_popular(self, update: Update, context: ContextTypes.DEFAULT_TYPE, query_message=None):
+    async def show_popular(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Показать популярные аниме"""
-        target = query_message or update.message
-        await target.reply_text("🔥 *Пробуждаю популярность...*", parse_mode='Markdown')
+        await update.callback_query.message.reply_text("🔥 *Пробуждаю популярность...*", parse_mode='Markdown')
         animes = self.recommender.get_popular_anime()
         if animes:
             for anime in animes[:3]:
-                await self.send_anime_info(target, anime, show_back=True)
+                await self.send_anime_info(update.callback_query.message, anime, show_back=True)
         else:
-            await target.reply_text("🌙 *Ничего не найдено...*", parse_mode='Markdown')
+            await update.callback_query.message.reply_text("🌙 *Ничего не найдено...*", parse_mode='Markdown')
     
-    async def show_rated(self, update: Update, context: ContextTypes.DEFAULT_TYPE, query_message=None):
+    async def show_rated(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Показать топ по рейтингу"""
-        target = query_message or update.message
-        await target.reply_text("⭐ *Взываю к великим...*", parse_mode='Markdown')
+        await update.callback_query.message.reply_text("⭐ *Взываю к великим...*", parse_mode='Markdown')
         animes = self.recommender.get_top_rated_anime()
         if animes:
             for anime in animes[:3]:
-                await self.send_anime_info(target, anime, show_back=True)
+                await self.send_anime_info(update.callback_query.message, anime, show_back=True)
         else:
-            await target.reply_text("🌙 *Тьма хранит тайны...*", parse_mode='Markdown')
+            await update.callback_query.message.reply_text("🌙 *Тьма хранит тайны...*", parse_mode='Markdown')
     
     async def show_genres(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Показать список жанров"""
@@ -103,14 +106,14 @@ class AnimeBot:
         
         reply_markup = InlineKeyboardMarkup(keyboard)
         
-        if update.callback_query:
+        try:
             await update.callback_query.edit_message_text(
                 "🦇 *Выбери свой путь...*\n\n_Каждый жанр — это врата в новый мир_",
                 parse_mode='Markdown',
                 reply_markup=reply_markup
             )
-        else:
-            await update.message.reply_text(
+        except:
+            await update.callback_query.message.reply_text(
                 "🦇 *Выбери свой путь...*",
                 parse_mode='Markdown',
                 reply_markup=reply_markup
@@ -121,14 +124,14 @@ class AnimeBot:
         keyboard = [[InlineKeyboardButton("◀️ Назад", callback_data="main_menu")]]
         reply_markup = InlineKeyboardMarkup(keyboard)
         
-        if update.callback_query:
+        try:
             await update.callback_query.edit_message_text(
                 "🔍 *Введи название аниме...*\n\n_Я найду его даже в самой тёмной бездне_",
                 parse_mode='Markdown',
                 reply_markup=reply_markup
             )
-        else:
-            await update.message.reply_text(
+        except:
+            await update.callback_query.message.reply_text(
                 "🔍 *Введи название аниме...*",
                 parse_mode='Markdown',
                 reply_markup=reply_markup
@@ -140,7 +143,7 @@ class AnimeBot:
         keyboard = [[InlineKeyboardButton("◀️ Назад", callback_data="main_menu")]]
         reply_markup = InlineKeyboardMarkup(keyboard)
         
-        if update.callback_query:
+        try:
             await update.callback_query.edit_message_text(
                 "🔮 *Я слышу твои желания...*\n\n"
                 "Напиши, что ты хочешь увидеть, например:\n"
@@ -150,8 +153,8 @@ class AnimeBot:
                 parse_mode='Markdown',
                 reply_markup=reply_markup
             )
-        else:
-            await update.message.reply_text(
+        except:
+            await update.callback_query.message.reply_text(
                 "🔮 *Напиши, что ты хочешь посмотреть...*",
                 parse_mode='Markdown',
                 reply_markup=reply_markup
@@ -275,16 +278,16 @@ _Прикоснись к тени..._
         
         # Главные кнопки
         if data == "main_menu":
-            await self.start(update, context)
+            await self.show_main_menu(update, context)
         
         elif data == "main_random":
-            await self.show_random(update, context, query.message)
+            await self.show_random(update, context)
         
         elif data == "main_popular":
-            await self.show_popular(update, context, query.message)
+            await self.show_popular(update, context)
         
         elif data == "main_rated":
-            await self.show_rated(update, context, query.message)
+            await self.show_rated(update, context)
         
         elif data == "main_genre":
             await self.show_genres(update, context)
@@ -304,10 +307,16 @@ _Прикоснись к тени..._
         elif data.startswith("like_"):
             anime_id = data.replace("like_", "")
             self.db.add_like(update.effective_user.id, anime_id)
-            await query.edit_message_text(
-                "🦇 *Тьма запомнила твой выбор...*\n\n_Благодарю, искатель_",
-                parse_mode='Markdown'
-            )
+            try:
+                await query.edit_message_text(
+                    "🦇 *Тьма запомнила твой выбор...*\n\n_Благодарю, искатель_",
+                    parse_mode='Markdown'
+                )
+            except:
+                await query.message.reply_text(
+                    "🦇 *Тьма запомнила твой выбор...*",
+                    parse_mode='Markdown'
+                )
     
     async def handle_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Обработка текстовых сообщений"""
@@ -326,8 +335,7 @@ _Прикоснись к тени..._
         """Запуск бота"""
         app = Application.builder().token(BOT_TOKEN).build()
         
-        app.add_handler(CommandHandler("start", self.start))
-        
+        app.add_handler(CommandHandler("start", self.show_main_menu))
         app.add_handler(CallbackQueryHandler(self.button_callback))
         app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_message))
         
